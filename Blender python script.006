@@ -1,0 +1,327 @@
+import bpy
+import pandas as pd
+######### Shapefile brought in through Blender GIS adon https://github.com/domlysz/BlenderGIS
+
+
+### return a selected and active object when given an object name
+def select_make_active(object_name):
+        bpy.context.view_layer.objects.active = bpy.data.objects[object_name]
+        ob = bpy.context.scene.objects[object_name]  # Get the object
+        bpy.ops.object.select_all(action='DESELECT') # Deselect all objects
+        bpy.context.view_layer.objects.active = ob   # Make active object
+        ob.select_set(True)                          # make selected object
+        return ob
+
+### put a keyframe in, move the object, put another keyframe after time step.
+def move_obj_keyframe(list2,start,step,x1,y1,listZ): 
+    
+    for k,activeX in enumerate(list2): #for each object name in list of objects
+        ob = select_make_active(activeX) #select it
+        #print('selected'+str(k))
+        
+        ob.keyframe_insert(data_path='location', frame=start) #insert a location keyframe at current position at time =start
+        
+        bpy.ops.transform.translate(value=(x1,y1,listZ[k])) #move it according to x,y,z, variables
+        #print('transformed'+str(k))
+        ob.keyframe_insert(data_path='location', frame=start+step) #insert another keyframe at the end position
+        #print('keyframe2'+str(k))
+
+### make an object visible in render
+def obj_appear_keyframe(ob, frameno): #give an onject name and a frame number
+    ob = select_make_active(ob) #select the object
+    ob.hide_render = False      #make visible
+    ob.keyframe_insert(data_path="hide_render", frame=frameno) #insert keyframe
+    
+###make and object invisible in render    
+def obj_dis_keyframe(ob, frameno): #give an onject name and a frame number
+    ob = select_make_active(ob)#select the object
+    ob.hide_render = True      #make invisible
+    ob.keyframe_insert(data_path="hide_render", frame=frameno)  #insert keyframe
+    
+
+        
+
+#change the colour of the object and put a keyframe in
+def colour_obj_keyframe(list2,start,step,x1,y1,listZ): 
+
+    for k, obj1 in enumerate(list2): #for each object name in list of objects
+        ob = select_make_active(obj1) #select it
+        hysteresis = 0.005 #don't change colour if data hasn't changed by more than this
+        mat = bpy.data.materials[obj1+"g"] #get the material
+        if listZ[k]>hysteresis:
+            mat.node_tree.nodes["Principled BSDF"].inputs[0].default_value = (purple)
+
+        elif listZ[k]<-hysteresis:
+            mat.node_tree.nodes["Principled BSDF"].inputs[0].default_value = (orange)
+
+        #else:
+        #    mat.node_tree.nodes["Principled BSDF"].inputs[0].default_value = (neutral) #neutral colour 
+
+        mat.node_tree.nodes["Principled BSDF"].inputs[0].keyframe_insert("default_value", frame=start+step) #insert keyframe
+   
+        
+#add a material to an object       
+def add_material(obj, material_name, r, g, b): 
+    material = bpy.data.materials.get(material_name)
+
+    if material is None: #if it doesn't exist create it
+        material = bpy.data.materials.new(material_name)
+
+    material.use_nodes = True #make it active
+    principled_bsdf = material.node_tree.nodes.get('Principled BSDF')
+
+    if principled_bsdf is not None: #give material a colour if material exists
+        principled_bsdf.inputs[0].default_value = (r, g, b, 1)  
+
+    obj.active_material = material #colour the object with the material   
+
+#text that changes with frames
+#for this it is currently impossible to keyframe text changes, but it is possible to add a calc 
+#to update when a frame appears or dissapears. 
+
+def recalculate_text(self): # the calc that will be applied to frame changes
+    font_curve.body = str((bpy.context.scene.frame_current+frame_counter_offset)//12) #need offset because starting part way through the animation
+                                                                                      #change only every twelve frames
+    if bpy.context.scene.frame_current>=(90*12)-frame_counter_offset:
+        font_curve.body = str('90+') #special case for the end of animation
+
+def register(): #append the calc to the end of a frame
+    bpy.app.handlers.frame_change_post.append(recalculate_text)
+
+def unregister(): #get rid of calc if needed
+    bpy.app.handlers.frame_change_post.remove(recalculate_text)
+    
+#hide text from renders
+for i in range(1,11):
+    bpy.data.objects["Text.00"+str(i)].hide_render = True
+
+obj_appear_keyframe('Intro_title', 1) 
+    
+#Giving every shape a material if it doesn't have one
+#Setting colours of objects, setting material 2 to be constant colour 
+Initial_set = 0
+if Initial_set==1:  
+    for j in range(0,df1.shape[0],1):
+        curr_area=area_list[j]
+        ob = select_make_active(curr_area) 
+       
+        for slt in ob.material_slots:#Get rid of any current materials
+            ob.active_material_index=0
+            bpy.ops.object.material_slot_remove()
+        
+        add_material( ob, str(area_list[j])+'g',0.0197116,0.0965029,0.0261981)
+        bpy.ops.object.material_slot_add()
+        add_material( ob, 'edge',0.40, 0.007, 0.000502)  #
+
+#lets bring in some data
+df_mean = pd.read_pickle('G:/Documents/Data analysis/Age UK dist/Age Dist Spider/agedist/pickledmeanage')
+df_mean = df_mean.sort_values(by=['mean_age'])
+print(df_mean)
+print(df_mean.shape[0])
+
+#pick the colours for the max and min average age
+lightest = [0.20,0.25,0.20,1]
+darkest = [0,0.05,0.0,1]
+rgb_difference = 0.2
+min_age= min(df_mean['mean_age']) #find the max and min ages
+mean_age_difference = max(df_mean['mean_age'])-min_age #find the difference between the two
+df_mean["rgb_offset"] = rgb_difference*(df_mean["mean_age"] -min_age)/mean_age_difference #map the difference onto colours
+print(df_mean)
+
+#setting keyframes at the start of the animation
+frame_counter=0
+frame_counter_offset=0 
+obj_appear_keyframe('Intro_title', 1) 
+obj_dis_keyframe('Text', 0)
+obj_dis_keyframe('Text.020', 0)
+obj_dis_keyframe('Title_age_group', frame_counter) 
+obj_dis_keyframe('Title_Oldest', frame_counter)  
+obj_dis_keyframe('Title_Youngest', frame_counter)   
+for i in range(0,len(df_mean)) : #setting colours based on average age data
+
+    #print(df1.loc[i, "LAD19NM"], df1.loc[i, "rgb_difference"])
+    rgb_d = df_mean.iloc[i, 2]
+    obj1 = df_mean.iloc[i, 0]
+    ob = select_make_active(obj1)
+    mat = bpy.data.materials[obj1+"g"]
+    print(obj1+"g")
+    mat.node_tree.nodes["Principled BSDF"].inputs[0].default_value = [0.2-rgb_d,0.25-rgb_d,0.2-rgb_d,1]
+    mat.node_tree.nodes["Principled BSDF"].inputs[0].keyframe_insert("default_value", frame=frame_counter)  
+
+
+
+    
+"""
+1) showing average age, highlight ten oldest areas, 10 youngest areas. 
+"""    
+
+
+animate_1 = True
+if animate_1==True:    
+    #pause
+    frame_counter=frame_counter+100   
+    obj_dis_keyframe('Intro_title', frame_counter)   
+
+
+    print(df_mean[['LAD19NM','rgb_offset']])
+
+    """
+    for i in range(0,len(df_mean)) : #setting colours based on average age data
+        print(i)
+        #print(df1.loc[i, "LAD19NM"], df1.loc[i, "rgb_difference"])
+        rgb_d = df_mean.iloc[i, 2]
+        obj1 = df_mean.iloc[i, 0]
+        ob = select_make_active(obj1)
+        mat = bpy.data.materials[obj1+"g"]
+        mat.node_tree.nodes["Principled BSDF"].inputs[0].default_value = [0.2-rgb_d,0.25-rgb_d,0.2-rgb_d,1]
+        mat.node_tree.nodes["Principled BSDF"].inputs[0].keyframe_insert("default_value", frame=0)
+    """    
+        
+
+
+
+    for i in range(1,11): #setting annotation text
+        scene = bpy.context.scene
+        obj = scene.objects['Text.00'+str(i)]
+        font_curve = obj.data
+        font_curve.body = str(df_mean.iloc[i-1, 0])+': '+str(round(df_mean.iloc[i-1, 1],2))
+
+     
+
+    ten_youngest=df_mean.iloc[0:10,0].tolist()
+    ten_youngest.reverse() #change to oldest to youngest
+    list1=ten_youngest
+
+
+    obj_appear_keyframe('Title_Youngest', frame_counter) 
+    #move areas up in turn 
+    for i in range(0,10):
+        listZ = [6]
+        move_obj_keyframe([list1[i]],frame_counter,25.0,0,0,listZ)
+        ob ='Text.00'+str(10-i)
+        obj_dis_keyframe(ob, 0)     
+        obj_appear_keyframe(ob, 12+frame_counter) 
+        frame_counter=frame_counter+25
+        
+    #move areas back down all together    
+    listZ = [-6] * 10    
+    move_obj_keyframe(list1,frame_counter,10,0,0,listZ) 
+    for i in range(0,10): 
+        ob ='Text.00'+str(10-i)
+        obj_dis_keyframe(ob, frame_counter) 
+    print(frame_counter)
+
+    obj_dis_keyframe('Title_Youngest', frame_counter)
+    obj_appear_keyframe('Title_Oldest', frame_counter)  
+    #do the same with the ten oldest places
+
+    ten_oldest=df_mean.iloc[df_mean.shape[0]-10:df_mean.shape[0],0].tolist()
+    print(ten_oldest)
+    ten_oldest_age = df_mean.iloc[df_mean.shape[0]-10:df_mean.shape[0],1].tolist()
+    print(ten_oldest_age)
+
+    list1=ten_oldest
+    print(list1)
+
+    ten_oldest.reverse()
+    ten_oldest_age.reverse()
+
+    for i in range(0,10,1): #setting annotation text
+        scene = bpy.context.scene
+        obj = scene.objects['Text.01'+str(i+1)]
+        font_curve = obj.data
+        font_curve.body = str(ten_oldest[i])+': '+str(round(ten_oldest_age[i],2))
+
+
+    ten_oldest.reverse()
+
+    for i in range(0,10): #moving corresponding areas
+        listZ = [6]
+        move_obj_keyframe([list1[i]],frame_counter,25.0,0,0,listZ)
+        ob ='Text.01'+str(10-i)
+        obj_dis_keyframe(ob, 0)     
+        obj_appear_keyframe(ob, 12+frame_counter) 
+        frame_counter=frame_counter+25
+
+      
+    #move everything down together    
+    listZ = [-6] * 10    
+    move_obj_keyframe(list1,frame_counter,10,0,0,listZ) 
+    for i in range(0,10): 
+        ob ='Text.01'+str(10-i)
+        obj_dis_keyframe(ob, frame_counter) 
+    print(frame_counter)  
+
+    obj_dis_keyframe('Title_Oldest', frame_counter)  
+
+    for i in range(0,len(df_mean)) : #setting colours based on average age data
+
+        #print(df1.loc[i, "LAD19NM"], df1.loc[i, "rgb_difference"])
+        rgb_d = df_mean.iloc[i, 2]
+        obj1 = df_mean.iloc[i, 0]
+        ob = select_make_active(obj1)
+        mat = bpy.data.materials[obj1+"g"]
+        print(obj1+"g")
+        mat.node_tree.nodes["Principled BSDF"].inputs[0].default_value = [0.2-rgb_d,0.25-rgb_d,0.2-rgb_d,1]
+        mat.node_tree.nodes["Principled BSDF"].inputs[0].keyframe_insert("default_value", frame=frame_counter)  
+
+
+
+"""
+Second part is to animate population distributions
+"""
+animate_2 = True
+if animate_2==True:
+    
+    #pause
+    frame_counter=frame_counter+100
+    
+    obj_appear_keyframe('Title_age_group', frame_counter) 
+    
+
+
+    orange = [0.418, 0.687, 0.791, 1]
+    purple = [255/255, 0.376/1, 0.0/255, 1]
+    neutral = [0.449314, 0.449314, 0.449314, 1]
+
+
+    #get some data
+    df1 = pd.read_pickle('G:/Documents/Data analysis/Age UK dist/Age Dist Spider/agedist/pickleddf')
+    print(df1)
+    data = df1
+    df1=df1.reset_index()
+    area_list = df1.iloc[:,0]
+    obj_appear_keyframe('Text', frame_counter)  
+    obj_appear_keyframe('Text.020', frame_counter)
+
+
+
+    #animate
+    #first make all movements for each area
+    frame_counter_offset=-frame_counter
+
+    for value, i in data.columns[1:]:
+        print(frame_counter)
+        currCol = df1.iloc[:,i]
+        if i>1:
+            currCol=(currCol-df1.iloc[:,(i-1)])
+        
+        move_obj_keyframe(area_list,frame_counter,12,0,0,currCol*5)
+
+      
+        colour_obj_keyframe(area_list,frame_counter,12,0,0,currCol)
+        
+        print("colour"+str(i))
+        scene = bpy.context.scene
+        obj = scene.objects['Text.020']
+        font_curve = obj.data
+        print("text"+str(i))
+        bpy.context.scene.frame_set(frame_counter+12)
+        register()
+        frame_counter=frame_counter+12
+    obj_dis_keyframe('Title_age_group', frame_counter)
+    
+   
+
+
+
